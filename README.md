@@ -17,6 +17,22 @@ Corrected "2.0" version — three documented flaws of the original are fixed:
 - `markov_regime.py` — core library: states, matrices, signal, forecasts, verification, walk-forward, Upstox F&O cost model
 - `run_demo.py` — proof run on NIFTY 50 daily: FIX 2 gate → calibration → both matrices → forecasts/stationary convergence → walk-forward before-fix vs after-fix, net of costs; writes `output/markov2_nifty_walkforward.png` + summary CSV
 - `download_nifty_daily.py` — builds a 10+ year NIFTY daily series year-by-year via the Upstox v3 daily endpoint (Analytics Token read at runtime from the local downloader config — **never stored in this repo**)
+- `filter_dynatrail.py` — FILTER mode: gates DynaTrail's entries with the regime signal, gated vs ungated on identical engine/config/costs
+- `filter_dynatrail_control.py` — the control that FILTER result demands: separates a real regime edge from a plain long-only bias
+- `filter_significance.py` — subset check + permutation test, because 41 trades is a thin sample
+
+## The drift trap (found 2026-08-14, read before using FILTER mode)
+
+On NIFTY the raw signal is positive from **all three** states (BEAR +0.48, BULL +0.13,
+SIDEWAYS +0.04) because the index drifts upward. A gate written as "short only when
+signal < −threshold" can therefore never fire: the filter silently becomes long-only.
+In the DynaTrail test it allowed CE on 18% of sessions, PE on **0%**, and blocked 82%
+entirely — improving profit factor (2.00 vs 1.39) while giving up ₹143,619 of net P&L,
+including 270 profitable PE trades.
+
+The regime effect on the side it *did* permit is real (₹956/trade gated vs ₹82 ungated on
+CE trades, permutation p = 0.029), but always run the same-side control before believing a
+FILTER headline, and prefer the de-meaned signal (vault note 40, Entry #016).
 
 ## Data & credentials
 
