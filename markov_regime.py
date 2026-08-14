@@ -117,6 +117,68 @@ def verify_label_mapping(close: pd.Series, window: int = 20,
     return checks
 
 
+def verify_label_mapping_generic(close: pd.Series, window: int = 20,
+                                 bull_thr: float = 0.05, bear_thr: float = -0.05) -> list[dict]:
+    """
+    Instrument-agnostic FIX 2 verification, for instruments where the NIFTY
+    anchors (COVID crash, 2020-21 recovery) do not apply — CrudeOil MCX,
+    BankNifty, single stocks, or any intraday-horizon series.
+
+    Anchors on the data's own extremes instead of on named calendar events:
+      1. definition consistency — every label re-derived from raw returns
+      2. the single WORST window in the series must label BEAR
+      3. the single BEST window must label BULL
+      4. the flattest window must label SIDEWAYS
+    Checks 2 and 3 are skipped (and reported as such) if the extreme does not
+    clear the configured threshold — that is a calibration fact, not a bug.
+    """
+    states = label_states(close, window, bull_thr, bear_thr)
+    ret = window_returns(close, window)
+    checks = []
+
+    ok = (bool((states[ret >= bull_thr] == STATE_BULL).all())
+          and bool((states[ret <= bear_thr] == STATE_BEAR).all())
+          and bool((states[(ret > bear_thr) & (ret < bull_thr)] == STATE_SIDEWAYS).all()))
+    checks.append({"name": "definition-consistency", "passed": ok,
+                   "detail": "every label re-derived from raw window returns matches its state code"})
+
+    worst, best, flat = ret.idxmin(), ret.idxmax(), ret.abs().idxmin()
+
+    if float(ret.loc[worst]) <= bear_thr:
+        checks.append({"name": "worst-window-is-BEAR",
+                       "passed": int(states.loc[worst]) == STATE_BEAR,
+                       "detail": f"{worst} window return {float(ret.loc[worst]):+.2%}"})
+    else:
+        checks.append({"name": "worst-window-is-BEAR", "passed": True,
+                       "detail": f"SKIPPED — worst window {float(ret.loc[worst]):+.2%} never reaches "
+                                 f"the {bear_thr:+.1%} threshold (calibration issue, not a labelling bug)"})
+
+    if float(ret.loc[best]) >= bull_thr:
+        checks.append({"name": "best-window-is-BULL",
+                       "passed": int(states.loc[best]) == STATE_BULL,
+                       "detail": f"{best} window return {float(ret.loc[best]):+.2%}"})
+    else:
+        checks.append({"name": "best-window-is-BULL", "passed": True,
+                       "detail": f"SKIPPED — best window {float(ret.loc[best]):+.2%} never reaches "
+                                 f"the {bull_thr:+.1%} threshold (calibration issue, not a labelling bug)"})
+
+    checks.append({"name": "flattest-window-is-SIDEWAYS",
+                   "passed": int(states.loc[flat]) == STATE_SIDEWAYS,
+                   "detail": f"{flat} window return {float(ret.loc[flat]):+.4%}"})
+    return checks
+
+
+def assert_labels_verified_generic(close: pd.Series, window: int = 20,
+                                   bull_thr: float = 0.05, bear_thr: float = -0.05) -> list[dict]:
+    """Run verify_label_mapping_generic and raise if any check fails."""
+    checks = verify_label_mapping_generic(close, window, bull_thr, bear_thr)
+    failed = [c for c in checks if not c["passed"]]
+    if failed:
+        raise AssertionError("Label verification FAILED: "
+                             + "; ".join(f"{c['name']} ({c['detail']})" for c in failed))
+    return checks
+
+
 def assert_labels_verified(close: pd.Series, window: int = 20,
                            bull_thr: float = 0.05, bear_thr: float = -0.05) -> list[dict]:
     """Run verify_label_mapping and raise if any check fails (FIX 2 gate)."""
@@ -186,6 +248,57 @@ def stationary_distribution(P: np.ndarray) -> np.ndarray:
     vals, vecs = np.linalg.eig(P.T)
     v = np.real(vecs[:, np.argmin(np.abs(vals - 1.0))])
     return v / v.sum()
+
+
+def phase_matrices(states: pd.Series, stride: int) -> list[np.ndarray]:
+    """
+    One transition matrix per possible sampling PHASE.
+
+    Stride sampling fixes the autocorrelation flaw (FIX 1) but silently makes
+    an arbitrary choice: which bar the non-overlapping grid starts on. There
+    are `stride` equally valid grids. If the answer depends on which one you
+    picked, the answer is noise dressed as a result.
+    """
+    out = []
+    for offset in range(stride):
+        sampled = states.iloc[offset::stride].to_numpy()
+        counts = np.zeros((N_STATES, N_STATES))
+        for a, b in zip(sampled[:-1], sampled[1:]):
+            counts[a, b] += 1
+        out.append(counts)
+    return out
+
+
+def phase_report(states: pd.Series, stride: int) -> dict:
+    """
+    Phase-robustness of the stride-sampled matrix (FIX 4).
+
+    Returns the mean transition matrix across all phases, the per-cell spread,
+    and the signal range per state. A signal whose sign flips across phases is
+    not a signal — it is an artifact of where the grid happened to start.
+    """
+    mats = phase_matrices(states, stride)
+    Ps = np.array([to_probabilities(c) for c in mats])
+    sigs = np.array([[float(P[s, STATE_BULL] - P[s, STATE_BEAR]) for s in range(N_STATES)]
+                     for P in Ps])
+    return {
+        "n_phases": len(mats),
+        "P_mean": Ps.mean(axis=0), "P_min": Ps.min(axis=0), "P_max": Ps.max(axis=0),
+        "signal_mean": sigs.mean(axis=0),
+        "signal_min": sigs.min(axis=0), "signal_max": sigs.max(axis=0),
+        "sign_stable": [bool((sigs[:, s] > 0).all() or (sigs[:, s] < 0).all())
+                        for s in range(N_STATES)],
+        "mean_transitions": float(np.mean([c.sum() for c in mats])),
+    }
+
+
+def format_phase_report(pr: dict) -> str:
+    lines = [f"  {'state':<10}{'signal mean':>13}{'range across phases':>26}{'sign stable?':>14}"]
+    for s in range(N_STATES):
+        rng = f"[{pr['signal_min'][s]:+.3f}, {pr['signal_max'][s]:+.3f}]"
+        lines.append(f"  {STATE_NAMES[s]:<10}{pr['signal_mean'][s]:>+13.3f}{rng:>26}"
+                     f"{('YES' if pr['sign_stable'][s] else 'NO — flips'):>14}")
+    return "\n".join(lines)
 
 
 def matrix_report(states: pd.Series, window: int) -> dict:

@@ -11,6 +11,31 @@ Corrected "2.0" version — three documented flaws of the original are fixed:
 | 1 | Overlapping 20-day windows share 19 days → fake diagonal persistence | Stride-sampled (non-overlapping) matrix is the honest one; both are always shown side by side, cells with <10 observations flagged |
 | 2 | A display once shipped with bull/bear swapped | `assert_labels_verified()` re-derives every label and checks known anchors (COVID crash = BEAR, 2020-21 recovery = BULL, flattest stretch = SIDEWAYS) before anything is displayed |
 | 3 | Ambiguity about how the signal is used | Explicit **FILTER** mode (signal gates an existing strategy) vs **STANDALONE** mode (trade the differential, whole lots, real Indian F&O costs) |
+| **4** | **Stride sampling still has to pick a grid START bar, and the answer depends on it** | `phase_report()` computes the matrix for all `stride` phases and reports mean + range; any signal whose sign flips across phases is an artifact (`phase_robustness.py`) |
+
+## FIX 4 — the one the original three missed
+
+FIX 1 correctly bans overlapping windows. But a non-overlapping grid must begin somewhere,
+and there are 20 equally valid starting bars. Checking all of them changes the conclusions:
+
+| | Phase 0 (naive) | Mean across 20 phases | Range | Sign stable? |
+|---|---|---|---|---|
+| NIFTY BEAR-row signal | +0.484 | +0.216 | [+0.000, +0.484] | **no** |
+| NIFTY P(BULL \| BEAR) | 54.8% | 36.0% | [20.0%, 54.8%] | — |
+| CrudeOil BULL-row signal | −0.132 | +0.015 | [−0.132, +0.180] | **no** |
+| CrudeOil BEAR-row signal | +0.200 | +0.034 | [−0.123, +0.200] | **no** |
+
+The naive phase-0 value is the *maximum* of the twenty in both NIFTY cases, and the low end of
+NIFTY's P(BULL|BEAR) range sits below the 22.9% unconditional base rate. **The earlier claim
+that NIFTY's 20-day signal is mean-reverting described one lucky grid alignment, not the
+market.** A related trap worth checking alongside it: consecutive stride windows share an
+endpoint price, inducing negative autocorrelation ≈ −(bar sd / window sd)² — enough to
+manufacture fake mean reversion on its own. Compare `stride = window` against
+`stride = window + 1` to isolate it.
+
+This is the fourth appearance of a single recurring error: overlapping windows (FIX 1), trades
+clustered inside regime episodes, correlated stocks (Entry #017), and now grid phase. Every
+time, a sampling choice manufactured the pattern.
 
 ## Files
 
@@ -20,6 +45,27 @@ Corrected "2.0" version — three documented flaws of the original are fixed:
 - `filter_dynatrail.py` — FILTER mode: gates DynaTrail's entries with the regime signal, gated vs ungated on identical engine/config/costs
 - `filter_dynatrail_control.py` — the control that FILTER result demands: separates a real regime edge from a plain long-only bias
 - `filter_significance.py` — subset check + permutation test, because 41 trades is a thin sample
+- `cross_sectional_bear.py` — Entry #017: the mechanism tested across 46 NIFTY50 stocks with a date-block bootstrap
+- `download_nifty50_daily.py` — long daily history for all 50 constituents
+- `phase_robustness.py` — FIX 4: the matrix across all sampling-grid phases, on both instruments
+- `crude_regime_report.py` / `download_crude_1min.py` — MCX CrudeOil, descriptive only (see below)
+
+## MCX CrudeOil
+
+**The daily horizon is not reachable.** Expired MCX contracts need Upstox Plus (this token has
+`isPlusPlan: false`), so only currently-listed contracts are available: the deepest starts
+2026-02-20, and the union across all six is ~119 trading days — about **4 non-overlapping
+20-day transitions** for a 9-cell matrix. `crude_regime_report.py` therefore uses a 20-**bar**
+window on 15-min data (5 hours ≈ ⅓ of an MCX session), which answers a different question.
+
+There, the default ±5% thresholds label 97% of windows SIDEWAYS — a 20-bar crude window has
+sd 1.98% against 5.99% for a 20-day NIFTY window — so percentile calibration is mandatory.
+The single-phase matrix showed a clean two-sided mean-reversion signal (BULL −0.132,
+BEAR +0.200) and, unlike NIFTY, both gate legs were reachable. **It did not survive FIX 4:**
+all three signals flip sign across phases and the phase means are ≈0. Independence is also
+worse than it looks — 207 stride transitions inside just 75 sessions of one contract over a
+single 113-day stretch. Use one contract, never a stitched continuous series: each roll injects
+a basis jump indistinguishable from a real return.
 
 ## The drift trap (found 2026-08-14, read before using FILTER mode)
 
