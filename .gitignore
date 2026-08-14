@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+output/
+config_local.py
+*.env
+access_token*.txt
