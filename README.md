@@ -32,7 +32,21 @@ including 270 profitable PE trades.
 
 The regime effect on the side it *did* permit is real (₹956/trade gated vs ₹82 ungated on
 CE trades, permutation p = 0.029), but always run the same-side control before believing a
-FILTER headline, and prefer the de-meaned signal (vault note 40, Entry #016).
+FILTER headline.
+
+**The de-meaned fix did not rescue it** (`filter_dynatrail_demeaned.py`, vault note 40
+Entry #016, run 2026-08-14). Comparing the signal against its expanding mean instead of zero
+makes the short leg reachable in principle — 215 days cleared −0.10 across the full history —
+but all of them predate October 2013, while the matrix was still immature. Once the matrix
+converges, the three states sit at raw signals of +0.04 / +0.13 / +0.48 against a running mean
+of ≈+0.10, so the deepest attainable de-meaned value is **−0.066**, mathematically above the
+−0.10 threshold. Result: 18 trades, all CE again, INCONCLUSIVE against its pre-registered bar.
+
+The real constraint is structural: **with three states the signal takes only three values on
+any given day**, and on a drifting index its downside range is too compressed to cross a
+symmetric threshold. Gating shorts needs a different construction — more states, a lower
+short threshold, or a signal that isn't a difference of two probabilities — not another
+adjustment to this one. Each is a new registry entry, not a tweak.
 
 ## Data & credentials
 
