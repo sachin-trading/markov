@@ -58,7 +58,32 @@ time, a sampling choice manufactured the pattern.
 20-day transitions** for a 9-cell matrix. `crude_regime_report.py` therefore uses a 20-**bar**
 window on 15-min data (5 hours ≈ ⅓ of an MCX session), which answers a different question.
 
-There, the default ±5% thresholds label 97% of windows SIDEWAYS — a 20-bar crude window has
+**The long-history answer, via WTI.** MCX crude is cash-settled against NYMEX WTI, so WTI
+supplies the history MCX cannot (`prepare_wti.py`, `wti_regime_report.py`). The proxy is
+verified rather than assumed — against the real MCX contracts on disk, MCX-vs-WTI 20-day
+return correlation is **0.986 / 0.985 / 0.930** for AUG/SEP/OCT-26. Source is EIA; their
+front-month futures series was discontinued after 2024-04-05, so Cushing spot is the base
+(spot-vs-futures 20-day correlation 0.9918, mean basis $0.163). The 2020-04-20 settlement of
+−$36.98 is blanked, since returns across a non-positive price are meaningless.
+
+That gives **41 years and 509 stride transitions — nearly double NIFTY's 266** — and the
+answer is clean: **crude has no regime persistence at the 20-day horizon.** Stride stickiness
+is 38.8% / 25.3% / 32.1% against base rates of 41.7% / 31.5% / 26.8%, i.e. at or *below*
+chance, while the overlapping matrix claims 80–85% — the FIX 1 artifact in its purest form.
+Conditional forward returns: BEAR +0.62% (t=0.20), SIDEWAYS +1.05% (t=1.36), BULL +1.02%
+(t=0.83) against an unconditional +0.93% (t=1.78). No state beats baseline; BEAR is worse.
+The BEAR edge flips sign every decade (−1.25%, +1.63%, −2.03%, +0.40%).
+
+A calibration note that contradicts the usual advice: **the default ±5% thresholds fit crude
+fine at the daily horizon** (41.7/31.5/26.8, no percentile fallback), because a 20-day WTI
+window has sd 11.47% versus NIFTY's 5.99%. Crude needs recalibration at the *intraday*
+horizon, not the daily one.
+
+Useful method validation: with 509 transitions the phase spread on P(BULL|BEAR) narrows to
+[31.0%, 38.6%], against NIFTY's [20.0%, 54.8%] on 266. Adequate power visibly shrinks the
+phase range — confirming NIFTY's spread was a small-sample symptom.
+
+At the intraday MCX horizon, the default ±5% thresholds label 97% of windows SIDEWAYS — a 20-bar crude window has
 sd 1.98% against 5.99% for a 20-day NIFTY window — so percentile calibration is mandatory.
 The single-phase matrix showed a clean two-sided mean-reversion signal (BULL −0.132,
 BEAR +0.200) and, unlike NIFTY, both gate legs were reachable. **It did not survive FIX 4:**
