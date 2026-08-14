@@ -44,9 +44,35 @@ of ≈+0.10, so the deepest attainable de-meaned value is **−0.066**, mathemat
 
 The real constraint is structural: **with three states the signal takes only three values on
 any given day**, and on a drifting index its downside range is too compressed to cross a
-symmetric threshold. Gating shorts needs a different construction — more states, a lower
-short threshold, or a signal that isn't a difference of two probabilities — not another
-adjustment to this one. Each is a new registry entry, not a tweak.
+symmetric threshold.
+
+## Verdict: the FILTER line is closed (2026-08-14)
+
+Rather than keep adjusting the gate, Entry #017 tested the mechanism it depended on —
+"BEAR windows are followed by unusual strength" — across **46 NIFTY50 constituents**,
+11,859 non-overlapping (stock, date) observations on 267 shared sample dates
+(`cross_sectional_bear.py`). Both pre-registered conditions failed: 33 of 46 stocks
+positive against a bar of 35, and a pooled edge of +0.55% at bootstrap **p = 0.173**.
+
+**The methodological result outlasts the trading one.** The same data analysed three other
+ways all claim a discovery:
+
+| Resampling unit | p-value | Verdict |
+|---|---|---|
+| **Dates** (pre-registered, correct) | **0.1728** | **FAIL** |
+| Stocks (explicitly forbidden) | 0.0090 | PASS |
+| Individual observations (naive) | 0.0050 | PASS |
+| Naive sign test, 33/46 positive | 0.00227 | PASS |
+
+Indian equities crash together — 2008, 2011, 2020 — so treating 46 names as 46 independent
+samples is fiction. Only resampling whole dates preserves that co-movement. Three of four
+plausible analyses would have manufactured a false positive, and the ban on the stock-level
+bootstrap is credible only because it was written down before the numbers were seen. This is
+the same error as FIX 1 (overlapping windows faking persistence), wearing different clothes.
+
+Markov 2.0 is retained as a **descriptive regime monitor** — current state, honest
+stride-sampled stickiness, forecast decay to the stationary distribution. It should not gate
+any strategy without a new registry entry and a fresh correlation-aware test.
 
 ## Data & credentials
 
